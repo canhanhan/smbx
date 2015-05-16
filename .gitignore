@@ -1,0 +1,4 @@
+*.log
+.state/
+build/
+extract_files/
