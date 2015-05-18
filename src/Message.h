@@ -1,29 +1,26 @@
 #ifndef SMBx_MESSAGE_H
 #define SMBx_MESSAGE_H
 
-#include "Analyzer.h"
+#include <memory>
+#include <stdexcept>
 #include "Reader.h"
+#include "AnalyzerContext.h"
 
 namespace SMBx 
 {	
-	class SMB2_Message 
+	class Analyzer;
+
+	class not_implemented_exception: public std::runtime_error
 	{
-		protected:
-		Analyzer* analyzer;
-		Reader* reader;			
-		
 		public:
-		SMB2_Message(Analyzer* a, Reader* r);
-		virtual ~SMB2_Message() {};
-		
-		virtual bool New() { throw "Does not support";	}
-		virtual bool Continue() { throw "Does not support";	}
+		not_implemented_exception(const string& what_arg) : std::runtime_error(what_arg) {};
 	};
 		
-	class SMB2_Header : public SMB2_Message
+	class SMB2_Header
 	{
 		public:
 		uint16 beginning;
+		uint32 protocolId;
 		uint16 header_size;
 		uint32 status;
 		uint16 command;
@@ -34,74 +31,87 @@ namespace SMBx
 		uint64 sessionId;
 		uint16 structure_size;	
 		bool is_response;
-		
-		SMB2_Header(Analyzer* a, Reader* r, uint16 b) : SMB2_Message(a, r) {
-			beginning = b;
-		};
-		
-		virtual bool New();
+		bool is_async;
+				
+		virtual bool New(Reader& reader);
 	};
 	
-	class SMB2_Body : public SMB2_Message
+	class SMB2_Body
 	{
 		protected:		
-		val_list* create_value_list();
-		
+		val_list* create_value_list(AnalyzerContext& context);		
+	
 		public:
-		SMB2_Header* header;
+		shared_ptr<SMB2_Header> header;
 		
-		SMB2_Body(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Message(a, r)
-		{
-			header = h;
-		}
+		SMB2_Body(shared_ptr<SMB2_Header> h) : header(h) { }
+		virtual ~SMB2_Body() {};
+		
+		virtual bool New(AnalyzerContext& context, Reader& reader) { throw not_implemented_exception("SMB2_Body::New"); }
+		virtual bool Continue(AnalyzerContext& context, Reader& reader) { throw not_implemented_exception("SMB2_Body::Continue"); }
+		
 	};
 	
+	class SMB2_Response
+	{
+		public:
+		shared_ptr<SMB2_Body> request_;
+			
+		shared_ptr<SMB2_Body> request() { return request_; }
+		template<typename T> shared_ptr<T> request() { return dynamic_pointer_cast<T>(request_); }
+		
+		SMB2_Response(shared_ptr<SMB2_Body> r) : request_(r) {}
+	};
+		
 	class SMB2_Chunked_Body : public SMB2_Body 
 	{
+		public:
+		uint16 data_offset = 0;
+		uint32 data_len = 0;
+		uint32 data_remaining = 0;
+		uint32 data_received = 0;		
+		
 		protected:
-		uint16 data_offset;
-		uint32 data_len;
-		uint32 data_remaining;
-		uint32 data_received;		
-		virtual bool GetData();
-		virtual void TriggerEvent() { throw 20; };
-		virtual void ChunkReceived(uint32 length) { throw 21; };
-		virtual void ChunkFailed() { throw 22; };
+		virtual void Finished(AnalyzerContext& context, Reader& reader) { };
+		virtual void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) { };
+		virtual void ChunkFailed(AnalyzerContext& context, Reader& reader) { };
 		
 		public:
-		SMB2_Chunked_Body(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool Continue();
+		SMB2_Chunked_Body(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;
+		virtual bool Continue(AnalyzerContext& context, Reader& reader) override;
 	};	
 	
 	class SMB2_FileMessage : public SMB2_Chunked_Body 
-	{
+	{	
 		private:
-		std::string file_id;		
+		shared_ptr<SMB2_File> file_;
 		
 		protected:
-		virtual void TriggerEvent();
-		virtual void ChunkReceived(uint32 length);
-		virtual void ChunkFailed();
-		
-		public:
-		virtual bool New();
-		SMB2_FileMessage(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Chunked_Body(a, r, h) {}
-	};		
-	
-	class SMB2_Error : public SMB2_Body
-	{
-		protected:
-		uint32 byte_count;
+		virtual void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override;
+		virtual void ChunkFailed(AnalyzerContext& context, Reader& reader) override;
 		
 		public:		
-		SMB2_Error(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}
-		virtual bool New();
-	};
+		uint64 offset = 0;
+		uint64 volatile_file_id = 0;
 		
+		SMB2_FileMessage(shared_ptr<SMB2_Header> h) : SMB2_Chunked_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;		
+	};		
+	
+	class SMB2_Error : public SMB2_Body, SMB2_Response
+	{
+		public:
+		uint32 byte_count;
+		
+		SMB2_Error(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;
+	};	
+	
 	class SMB2_Negotiate_Request : public SMB2_Body
 	{
-		protected:
-		VectorType* vector_of_count;
+		public:
+		VectorType* vector_of_count = new VectorType(base_type(TYPE_COUNT));
 		uint16 dialect_count;
 		uint16 security_mode;
 		int32 capabilities;
@@ -109,21 +119,15 @@ namespace SMBx
 		const uint16* dialects = NULL;
 		VectorVal* dialectsVal = NULL;	
 		
-		public:	
-		SMB2_Negotiate_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {
-			vector_of_count = new VectorType(base_type(TYPE_COUNT));
-		}
-
-		~SMB2_Negotiate_Request() {
-			Unref(vector_of_count);	
-		}
+		SMB2_Negotiate_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}
+		~SMB2_Negotiate_Request() { Unref(vector_of_count);	 }
 		
-		virtual bool New();
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;
 	};
 	
-	class SMB2_Negotiate_Response : public SMB2_Body
+	class SMB2_Negotiate_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint16 security_mode;
 		uint16 dialect; 
 		const char* server_guid;
@@ -133,15 +137,14 @@ namespace SMBx
 		uint16 buffer_offset;
 		uint16 buffer_len;
 		
-		public:
-		SMB2_Negotiate_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}
-		
-		virtual bool New();
-	};
+		SMB2_Negotiate_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}
 	
-	class SMB2_Session_Setup_Request : public SMB2_Body
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;
+	};	
+	
+class SMB2_Session_Setup_Request : public SMB2_Body
 	{
-		private:
+		public:
 		uint8 flags;
 		uint8 security_mode;
 		uint32 capabilities;
@@ -150,80 +153,77 @@ namespace SMBx
 		uint16 buffer_len;
 		uint64 previous_session_id;	
 
-		public:
-		SMB2_Session_Setup_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}
+		SMB2_Session_Setup_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}
 		
-		virtual bool New();		
+		virtual bool New(AnalyzerContext& context, Reader& reader);		
 	};
 	
-	class SMB2_Session_Setup_Response : public SMB2_Body
+	class SMB2_Session_Setup_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint16 flags;
 		uint16 buffer_offset;
 		uint16 buffer_len;
 		
-		public:
-		SMB2_Session_Setup_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}
+		SMB2_Session_Setup_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}
 		
-		virtual bool New();			
+		virtual bool New(AnalyzerContext& context, Reader& reader);			
 	};
 	
 	class SMB2_Logoff_Request : public SMB2_Body
 	{
 		public:
-		SMB2_Logoff_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Logoff_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;	
 	};
 	
-	class SMB2_Logoff_Response : public SMB2_Body
+	class SMB2_Logoff_Response : public SMB2_Body, public SMB2_Response
 	{
 		public:
-		SMB2_Logoff_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Logoff_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
 	class SMB2_Tree_Connect_Request : public SMB2_Body
 	{
-		private:
-		uint16 path_offset;	
-		uint16 path_length;
-		
 		public:
-		SMB2_Tree_Connect_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		uint16 path_offset;	
+		uint16 path_length;	
+		string name;
+		
+		SMB2_Tree_Connect_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Tree_Connect_Response : public SMB2_Body
+	class SMB2_Tree_Connect_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint8 share_type;
 		uint32 share_flags;
 		uint32 capabilities;
 		uint32 maximal_access;
 	
-		public:
-		SMB2_Tree_Connect_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Tree_Connect_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};	
 	
 	class SMB2_Tree_Disconnect_Request : public SMB2_Body
 	{
 		public:
-		SMB2_Tree_Disconnect_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Tree_Disconnect_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Tree_Disconnect_Response : public SMB2_Body
+	class SMB2_Tree_Disconnect_Response : public SMB2_Body, public SMB2_Response
 	{
 		public:
-		SMB2_Tree_Disconnect_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Tree_Disconnect_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};	
 
 	class SMB2_Create_Request : public SMB2_Body
 	{
-		private:
+		public:		
 		uint8 oplock;
 		uint32 impersonation_level;
 		uint64 flags;
@@ -236,16 +236,15 @@ namespace SMBx
 		uint16 filename_len;
 		uint32 context_offset;
 		uint32 context_len;
-		BroString* filename;
+		string filename;
 		
-		public:
-		SMB2_Create_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Create_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Create_Response : public SMB2_Body
+	class SMB2_Create_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint8 oplock;
 		uint32 create_action;
 		uint64 creation_time;
@@ -260,26 +259,24 @@ namespace SMBx
 		uint32 context_offset;
 		uint32 context_len;		
 		
-		public:
-		SMB2_Create_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Create_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
 	class SMB2_Close_Request : public SMB2_Body
 	{
-		private:
+		public:
 		uint16 flags;
 		uint64 persistent_file_id;
 		uint64 volatile_file_id;
 	
-		public:
-		SMB2_Close_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Close_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Close_Response : public SMB2_Body
+	class SMB2_Close_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint16 flags;
 		uint64 creation_time;
 		uint64 last_access_time;
@@ -289,14 +286,13 @@ namespace SMBx
 		uint64 eof;
 		uint32 file_attrs;
 	
-		public:
-		SMB2_Close_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Close_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};		
 	
 	class SMB2_Read_Request : public SMB2_Body
 	{
-		private:
+		public:
 		uint8 flags;
 		uint32 length;
 		uint64 offset;
@@ -308,72 +304,61 @@ namespace SMBx
 		uint16 channel_info_offset;
 		uint16 channel_info_len;		
 		
-		public:
-		SMB2_Read_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Read_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
 	
-	class SMB2_Read_Response : public SMB2_FileMessage
-	{	
-		protected:
-		virtual void TriggerEvent();
-		
+	class SMB2_Read_Response : public SMB2_FileMessage, public SMB2_Response
+	{		
 		public:
-		SMB2_Read_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_FileMessage(a, r, h) {}		
-		virtual bool New();
-	
+		SMB2_Read_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_FileMessage(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;	
 	};		
 	
 	class SMB2_Write_Request : public SMB2_FileMessage
 	{
-		private:
-		uint64 offset;
+		public:
 		uint64 persistent_file_id;
-		uint64 volatile_file_id;
 		uint32 channel;
 		uint16 channel_info_offset;
 		uint16 channel_info_len;
 		uint32 flags;
-
-		protected:
-		virtual void TriggerEvent();
-		
+	
 		public:
-		SMB2_Write_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_FileMessage(a, r, h) {}		
-		virtual bool New();
+		SMB2_Write_Request(shared_ptr<SMB2_Header> h) : SMB2_FileMessage(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;
 	};
 	
-	class SMB2_Write_Response : public SMB2_Body
+	class SMB2_Write_Response : public SMB2_Body, public SMB2_Response
 	{
-		private:
+		public:
 		uint32 byte_count;
 		uint32 remaining;
 		uint16 channel_info_offset;
 		uint16 channel_info_len;
 		
-		public:
-		SMB2_Write_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Write_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};	
 
 	class SMB2_Cancel_Request : public SMB2_Body
 	{
 		public:
-		SMB2_Cancel_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Cancel_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Cancel_Response : public SMB2_Body
+	class SMB2_Cancel_Response : public SMB2_Body, public SMB2_Response
 	{
 		public:
-		SMB2_Cancel_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Cancel_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};	
 
 	class SMB2_Query_Directory_Request : public SMB2_Body
 	{
-		private:
+		public:
 		uint8 info_class;
 		uint8 flags;
 		uint32 file_index;
@@ -382,25 +367,22 @@ namespace SMBx
 		uint16 filename_offset;
 		uint16 filename_len;
 		uint32 output_buffer_len;
-		BroString* filename;
 		
-		public:
-		SMB2_Query_Directory_Request(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Body(a, r, h) {}		
-		virtual bool New();					
+		SMB2_Query_Directory_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;					
 	};
 	
-	class SMB2_Query_Directory_Response : public SMB2_Chunked_Body
+	class SMB2_Query_Directory_Response : public SMB2_Chunked_Body, public SMB2_Response
 	{	
 		protected:
-		virtual void TriggerEvent();
-		virtual void ChunkReceived(uint32 length);
-		virtual void ChunkFailed();
+		virtual void Finished(AnalyzerContext& context, Reader& reader) override;
+		virtual void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override;
+		virtual void ChunkFailed(AnalyzerContext& context, Reader& reader) override;
 	
 		public:
-		SMB2_Query_Directory_Response(Analyzer* a, Reader* r, SMB2_Header* h) : SMB2_Chunked_Body(a, r, h) {}		
-		virtual bool New();			
-	};	
-	
+		SMB2_Query_Directory_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Chunked_Body(h), SMB2_Response(req) {}		
+		virtual bool New(AnalyzerContext& context, Reader& reader) override;			
+	};		
 }
 	
 #endif

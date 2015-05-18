@@ -1,7 +1,8 @@
 #include <stdlib.h>
-#include "Handler.h"
+#include <memory>
 #include "Reporter.h"
 #include "Event.h"
+#include "Handler.h"
 #include "Message.h"
 	
 #define STATUS_SUCCESS						0x00000000
@@ -21,14 +22,15 @@
 #define STATUS_NO_MORE_FILES				0x80000006
 #define STATUS_NOTIFY_ENUM_DIR				0x0000010C
 	
-#define REGISTER_COMMAND(message,handler) \
-	case message:\
-		current_message = header->is_response ? (SMB2_Body*)new handler##_Response(analyzer, reader, header) : new handler##_Request(analyzer, reader, header); \
-		break;
-		
+#define SMBX_COMMAND(handlerType) \
+	CommandPair( \
+		[] (shared_ptr<SMB2_Header> header) -> shared_ptr<SMB2_Body> { return make_shared<handlerType##_Request>(header); }, \
+		[] (shared_ptr<SMB2_Header> header, shared_ptr<SMB2_Body> request) -> shared_ptr<SMB2_Body> { return make_shared<handlerType##_Response>(header, request); } \
+	)	
+	
 namespace SMBx 
-{	
-	enum SMB2_COMMAND
+{		
+	enum SMB2_COMMAND : uint16
 	{
 		SMB2_NEGOTIATE_PROTOCOL = 0,
 		SMB2_SESSION_SETUP      = 1,
@@ -48,148 +50,142 @@ namespace SMBx
 		SMB2_CHANGE_NOTIFY      = 15,
 		SMB2_QUERY_INFO         = 16,
 		SMB2_SET_INFO           = 17,
-		SMB2_OPLOCK_BREAK       = 18,	
+		SMB2_OPLOCK_BREAK       = 18
 	};
 	
-	Handler::Handler(Analyzer* a, Reader* r) {
-		is_last_finished = true;
-		is_last_parsed = true;
-		buffer = 0;
-		buffer_len = 0;
-		analyzer = a;	
-		reader = r;
+	Commands::Commands() 
+	{
+		commands[SMB2_NEGOTIATE_PROTOCOL] = SMBX_COMMAND(SMB2_Negotiate);
+		commands[SMB2_SESSION_SETUP] = SMBX_COMMAND(SMB2_Session_Setup);
+		commands[SMB2_LOGOFF] = SMBX_COMMAND(SMB2_Logoff);
+		commands[SMB2_TREE_CONNECT] = SMBX_COMMAND(SMB2_Tree_Connect);
+		commands[SMB2_TREE_DISCONNECT] = SMBX_COMMAND(SMB2_Tree_Disconnect);
+		commands[SMB2_CREATE] = SMBX_COMMAND(SMB2_Create);
+		commands[SMB2_CLOSE] = SMBX_COMMAND(SMB2_Close);
+		// commands[SMB2_FLUSH] = SMBX_COMMAND(SMB2_Flush);
+		commands[SMB2_READ] = SMBX_COMMAND(SMB2_Read);
+		commands[SMB2_WRITE] = SMBX_COMMAND(SMB2_Write);
+		// commands[SMB2_LOCK] = SMBX_COMMAND(SMB2_Lock);
+		// commands[SMB2_IOCTL] = SMBX_COMMAND(SMB2_Ioctl);
+		commands[SMB2_CANCEL] = SMBX_COMMAND(SMB2_Cancel);
+		// commands[SMB2_ECHO] = SMBX_COMMAND(SMB2_Echo);
+		commands[SMB2_QUERY_DIRECTORY] = SMBX_COMMAND(SMB2_Query_Directory);
+		// commands[SMB2_CHANGE_NOTIFY] = SMBX_COMMAND(SMB2_Change_Notify);
+		// commands[SMB2_QUERY_INFO] = SMBX_COMMAND(SMB2_Query_Info);
+		// commands[SMB2_SET_INFO] = SMBX_COMMAND(SMB2_Set_Info);
+		// commands[SMB2_OPLOCK_BREAK] = SMBX_COMMAND(SMB2_Oplock_Break);						
 	}
-
+	
+	const CommandPair Commands::get(uint16 command, bool is_response) const
+	{
+		auto it = commands.find(command);
+		if (it == commands.end())
+			return default_command;
+		
+		return it->second;			
+	}
+	
 	void Handler::handle(int len, const u_char* data)
 	{
-		reader->reset(len, data);
+		reader.reset(len, data);
 		
-		//printf("Hebele1\n");
 		do {
-			//printf("Hebele2: cp: %u, l: %u\n", reader->current_pos, reader->len);
-			uint16 beginning = reader->current_pos;
+			auto beginning = reader.current_pos;
 			
 			if (is_last_finished == true) {				
-				if (!is_last_parsed)
-				{				
-					printf("Continues: bl: %d, l: %d\n", buffer_len, len);					
-					size_t size = len * sizeof(u_char);
-					buffer = (u_char*)realloc(buffer, buffer_len*sizeof(u_char) + size);
-					memcpy(&buffer[buffer_len], data, size);
-					buffer_len = buffer_len + len;
-					reader->reset(buffer_len, buffer);
+				if (!is_last_parsed) {
+					buffer.append(len, data);
+					reader.reset(buffer.len(), buffer.data());
 				}
 				
 				is_last_parsed = handle_new();
 				
-				if (is_last_parsed) {				
-					if (buffer != 0) {
-						std::cout << "Free world" << std::endl;
-						free(buffer);	
-						buffer = 0;
-						buffer_len = 0;
-					}
+				if (!is_last_parsed) {		
+					buffer.append(len - beginning, data + beginning);
+					reader.move_end();				
 				} else {
-					printf("Needs to continue: b: %d, bl: %d, l: %d\n", beginning, buffer_len, len);
-					uint16 previous_pos = buffer_len;
-					buffer_len += len - beginning;					
-					size_t buffer_size = buffer_len * sizeof(u_char);				
-					buffer = (u_char*)malloc(buffer_size);
-					memcpy(&buffer[previous_pos], &data[beginning], buffer_size);
-					
-					reader->move_end();
+					buffer.reset();
 				}				
 			} else {
 				handle_continue();
 			}
 			
-			if (is_last_finished == true && current_message != NULL) {
-				delete current_message;
-				current_message = NULL;
+			if (is_last_finished == true && current_message != nullptr && current_message->header->is_response) {
+				current_message = nullptr;
 			}		
-		} while (reader->current_pos < reader->len);
+		} while (reader.current_pos < reader.len);
 	}
 
 	bool Handler::handle_new()
 	{	
 		// Find SMB2 magic
-		while (reader->current_pos + 4 < reader->len && *((uint32*)(reader->data + reader->current_pos)) != 0x424D53FE)
+		while (reader.current_pos + 4 < reader.len && *((uint32*)(reader.data + reader.current_pos)) != 0x424D53FE)
 		{
-			reader->skip(1);
-			if (reader->current_pos + 4 >= reader->len) {
-				std::cout << "Not SMB2 package.\n";
-				reader->move_end();
+			reader.skip(1);
+			if (reader.current_pos + 4 >= reader.len) {
+				DEBUG_MSG("Not SMB2 package.\n");
+				reader.move_end();
 				return true;
 			}
 		}
 		
-		if (reader->len - reader->current_pos < 64) {
+		if (reader.len - reader.current_pos < 64) {
 			return false;
 		}
 		
-		reader->skip(4);		
-		SMB2_Header* header = new SMB2_Header(analyzer, reader, reader->current_pos - 4);	
-		header->New();
-		
-		if (header->is_response && header->status != STATUS_SUCCESS
-			&& !(header->command == SMB2_SESSION_SETUP && header->status == STATUS_MORE_PROCESSING_REQUIRED)
-			//&& !(header->command == SMB2_QUERY_DIRECTORY && header->status == STATUS_NO_MORE_FILES)
-			&& !(header->command == SMB2_QUERY_INFO && header->status == STATUS_BUFFER_OVERFLOW)
-			&& !(header->command == SMB2_READ && header->status == STATUS_BUFFER_OVERFLOW)
-			&& !(header->command == SMB2_IOCTL && header->status == STATUS_BUFFER_OVERFLOW)
-			&& !(header->command == SMB2_READ && header->status == STATUS_INVALID_PARAMETER)
-			&& !(header->command == SMB2_READ && header->status == STATUS_NOTIFY_ENUM_DIR))
-		{
-			current_message = new SMB2_Error(analyzer, reader, header);
-		} else {			
-			switch (header->command)
-			{
-				REGISTER_COMMAND(SMB2_NEGOTIATE_PROTOCOL,SMB2_Negotiate);
-				REGISTER_COMMAND(SMB2_SESSION_SETUP, SMB2_Session_Setup);
-				REGISTER_COMMAND(SMB2_LOGOFF, SMB2_Logoff);
-				REGISTER_COMMAND(SMB2_TREE_CONNECT, SMB2_Tree_Connect);
-				REGISTER_COMMAND(SMB2_TREE_DISCONNECT, SMB2_Tree_Disconnect);
-				REGISTER_COMMAND(SMB2_CREATE, SMB2_Create);
-				REGISTER_COMMAND(SMB2_CLOSE, SMB2_Close);
-				// REGISTER_COMMAND(SMB2_FLUSH, SMB2_Flush);
-				REGISTER_COMMAND(SMB2_READ, SMB2_Read);
-				REGISTER_COMMAND(SMB2_WRITE, SMB2_Write);
-				// REGISTER_COMMAND(SMB2_LOCK, SMB2_Lock);
-				// REGISTER_COMMAND(SMB2_IOCTL, SMB2_Ioctl);
-				REGISTER_COMMAND(SMB2_CANCEL, SMB2_Cancel);
-				// REGISTER_COMMAND(SMB2_ECHO, SMB2_Echo);
-				REGISTER_COMMAND(SMB2_QUERY_DIRECTORY, SMB2_Query_Directory);
-				// REGISTER_COMMAND(SMB2_CHANGE_NOTIFY, SMB2_Change_Notify);
-				// REGISTER_COMMAND(SMB2_QUERY_INFO, SMB2_Query_Info);
-				// REGISTER_COMMAND(SMB2_SET_INFO, SMB2_Set_Info);
-				// REGISTER_COMMAND(SMB2_OPLOCK_BREAK, SMB2_Oplock_Break);	
-				default:
-					printf("Unknown command: %hu\n", header->command);
-					reader->move_end();
-					delete header;
-					return true;
-			}		
-		}
-		
-		uint16 avail = reader->len - reader->current_pos;
-		//printf("Size: %hu, mid: %u, isr: %d, Command: %hu, Status: 0x%X, ss: %u, av: %u, CMD: %u, MSG:%lu, TID: %u, SID: 0x%lX\n", header->header_size, header->messageId, header->is_response, header->command, header->status, header->structure_size, avail, header->next_command, header->messageId, header->treeId, header->sessionId);
+		auto header = make_shared<SMB2_Header>();
+		header->New(reader);
 			
-		if (header->structure_size - 2 > avail)
+		current_message = get_message(header);
+		
+		if (current_message == nullptr) 
+		{
+			DEBUG_MSG("Unknown command: %hu\n", header->command);
+			reader.move_end();
+			return true;				
+		}
+			
+		auto avail = reader.len - reader.current_pos;		
+		if (header->structure_size - 2 > avail) // Structure is not part of header - hence the - 2
 		{
 			return false;
 		} else {
-			is_last_finished = current_message->New();				
+			is_last_finished = current_message->New(context, reader);		
+			if (!header->is_response)			
+				context.state.PushMessage(header->messageId, current_message);
+			
 			return true;
 		}
 	}
 
 	void Handler::handle_continue()
 	{
-		if (current_message == NULL) {
-			printf("current_message was NULL!\n");
-			throw "current_message was NULL!";
-		}
+		ASSERT(current_message != nullptr);		
+		is_last_finished = current_message->Continue(context, reader);	
+	}
+	
+	shared_ptr<SMB2_Body> Handler::get_message(shared_ptr<SMB2_Header> header)
+	{		
+		auto command_id = header->command;
+		auto status = header->status;
+		auto is_response = header->is_response;
+		shared_ptr<SMB2_Body> request;
 		
-		is_last_finished = current_message->Continue();	
+		if (is_response)
+			request = context.state.PopMessage(header->messageId);
+		
+		if (is_response && status != STATUS_SUCCESS
+			&& !(command_id == SMB2_SESSION_SETUP && status == STATUS_MORE_PROCESSING_REQUIRED)
+			&& !(command_id == SMB2_QUERY_INFO && status == STATUS_BUFFER_OVERFLOW)
+			&& !(command_id == SMB2_READ && status == STATUS_BUFFER_OVERFLOW)
+			&& !(command_id == SMB2_IOCTL && status == STATUS_BUFFER_OVERFLOW)
+			&& !(command_id == SMB2_READ && status == STATUS_INVALID_PARAMETER)
+			&& !(command_id == SMB2_READ && status == STATUS_NOTIFY_ENUM_DIR)) 
+		{
+			return make_shared<SMB2_Error>(header, request);
+		}
+				
+		auto pair = commands.get(command_id, is_response);
+		return is_response ? pair.response(header, request) : pair.request(header);
 	}
 }

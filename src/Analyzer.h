@@ -1,36 +1,37 @@
 #ifndef SMBx_ANALYZER_H
 #define SMBx_ANALYZER_H
 
-#include "Reader.h"
+#include <memory>
 #include "analyzer/protocol/tcp/TCP.h"
 #include "analyzer/protocol/tcp/TCP_Reassembler.h"
-   
-namespace SMBx {
-	class Handler;
-	
-	class Analyzer : public analyzer::tcp::TCP_ApplicationAnalyzer {
+#include "file_analysis/Manager.h"
+#include "AnalyzerContext.h"
+#include "State.h"
+#include "Handler.h"
+
+namespace SMBx {	
+	class Analyzer : public analyzer::tcp::TCP_ApplicationAnalyzer {	
 		public:
-			Analyzer(Connection* conn);
-			virtual ~Analyzer();
-			
+			Analyzer(Connection* conn): analyzer::tcp::TCP_ApplicationAnalyzer("SMBx", conn), context_(conn, GetID(), GetAnalyzerTag()) {}
+						
 			// Overriden from Analyzer.
-			virtual void Done();
-			virtual void DeliverStream(int len, const u_char* data, bool orig);
-			virtual void Undelivered(uint64 seq, int len, bool orig);
+			void Done() final override;
+			void DeliverStream(int len, const u_char* data, bool orig) final override;
+			void Undelivered(uint64 seq, int len, bool orig) final override;
 
 			// Overriden from tcp::TCP_ApplicationAnalyzer.
-			virtual void EndpointEOF(bool is_orig);			
-			
+			void EndpointEOF(bool is_orig) override;			
+						
 			static analyzer::Analyzer* Instantiate(Connection* conn)
 				{ return new Analyzer(conn); }
 
 			static bool Available()
 				{ return true; }		
 				
-		protected:
-			Reader* reader_[2];
-			Handler* handler_[2];
-			bool had_gap;
+		protected:							
+			bool had_gap = false;
+			AnalyzerContext context_;
+			array<Handler, 2> handler_ { { Handler(context_), Handler(context_) } };
 	};
 }
 
