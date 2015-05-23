@@ -108,7 +108,7 @@ namespace SMBx
 	{			
 		uint32 remaining = std::min(data_len - data_received, (uint32)reader.len);				
 		data_received += remaining;
-		
+			
 		ChunkReceived(context, reader, remaining);
 			
 		if (data_received < data_len) 
@@ -129,8 +129,8 @@ namespace SMBx
 		 
 		if (file_ == nullptr)
 			file_ = context.state.GetFile(header->sessionId, header->treeId, volatile_file_id);
-		
-		if (smb2_pre_file_transfer) {
+				
+		if (file_ != nullptr && smb2_pre_file_transfer) {
 			RecordVal* rv = new RecordVal(smb2_fileinfo);
 			rv->Assign(0, new StringVal(new BroString(file_->file_id)));
 			rv->Assign(1, new StringVal(new BroString(file_->name)));
@@ -147,14 +147,18 @@ namespace SMBx
 	}
 	
 	void SMB2_FileMessage::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
-	{				
-		file_->file_id = file_mgr->DataIn(reader.read<uint8>(length), length, offset + data_received - length, context.tag, context.conn, !header->is_response, file_->file_id);
+	{			
+		if (file_ != nullptr) 
+			file_->file_id = file_mgr->DataIn(reader.read<uint8>(length), length, offset + data_received - length, context.tag, context.conn, !header->is_response, file_->file_id);
 	}	
 	
 	void SMB2_FileMessage::ChunkFailed(AnalyzerContext& context, Reader& reader)
 	{
-		DEBUG_MSG("Missed a file... (File length: %u, Collected: %u)\n", data_len, data_received);
-		file_mgr->IgnoreFile(file_->file_id);
+		DEBUG_MSG("Missed part of a file... (File length: %u, Collected: %u)\n", data_len, data_received);
+		if (file_ != nullptr)
+			file_mgr->IgnoreFile(file_->file_id);
+		
+		reader.skip(data_received);
 	}	
 
 	bool SMB2_Error::New(AnalyzerContext& context, Reader& reader) 
@@ -354,8 +358,10 @@ namespace SMBx
 		share_flags = *reader.read<uint32>();
 		capabilities = *reader.read<uint32>();
 		maximal_access = *reader.read<uint32>();
-		
-		context.state.NewTreeConnection(header->sessionId, header->treeId, request<SMB2_Tree_Connect_Request>()->name);
+
+		auto req = request<SMB2_Tree_Connect_Request>();
+		if (req != nullptr)
+			context.state.NewTreeConnection(header->sessionId, header->treeId, req->name);		
 		
 		if (smb2_treeconnect_response) {	
 			val_list* vl = create_value_list(context);
@@ -461,7 +467,9 @@ namespace SMBx
 			reader.skip(context_len);
 		}
 						
-		context.state.NewFile(header->sessionId, request()->header->treeId, volatile_file_id, request<SMB2_Create_Request>()->filename);		
+		auto req = request<SMB2_Create_Request>();
+		if (req != nullptr)
+			context.state.NewFile(header->sessionId, request()->header->treeId, volatile_file_id, req->filename);		
 		
 		if (smb2_create_response) {	
 			val_list* vl = create_value_list(context);
@@ -574,8 +582,11 @@ namespace SMBx
 		reader.skip(4);
 			
 		auto req = request<SMB2_Read_Request>();
-		volatile_file_id = req->volatile_file_id;
-		offset = req->offset;
+		if (req != nullptr) 
+		{
+			volatile_file_id = req->volatile_file_id;
+			offset = req->offset;
+		}
 		
 		if (smb2_read_response) {	
 			val_list* vl = create_value_list(context);
