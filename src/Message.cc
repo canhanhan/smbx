@@ -197,7 +197,7 @@ namespace SMBx
  
 		return true;		
 	}
-	
+		
 	bool SMB2_Negotiate_Response::New(AnalyzerContext& context, Reader& reader)
 	{		
 		security_mode = *reader.read<uint16>();
@@ -208,16 +208,15 @@ namespace SMBx
 		reader.skip(12);
 		server_time = *reader.read<uint64>();
 		server_boot_time = *reader.read<uint64>();
-		buffer_offset = *reader.read<uint16>();
-		buffer_len = *reader.read<uint16>();
+		data_offset = *reader.read<uint16>();
+		data_len = *reader.read<uint16>();
 		reader.skip(4);
 		
-		if (buffer_len > 0) 
-		{
-			reader.skip(header->beginning + buffer_offset - reader.current_pos);
-			reader.skip(buffer_len);
-		}
-		
+		return SMB2_Chunked_Body::New(context, reader);	
+	}	
+	
+	void SMB2_Negotiate_Response::Finished(AnalyzerContext& context, Reader& reader)
+	{
 		if (smb2_negotiate_response) {	
 			val_list* vl = create_value_list(context);				
 			vl->append(new Val(security_mode, TYPE_COUNT));
@@ -228,10 +227,14 @@ namespace SMBx
 			vl->append(new Val(TIMESTAMP(server_boot_time), TYPE_TIME));
 
 			context.QueueEvent(smb2_negotiate_response, vl);
-		}
+		}		
+	}
+	
+	void SMB2_Negotiate_Response::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
+	{
+		reader.skip(length);
+	}
 		
-		return true;
-	}	
 	
 	bool SMB2_Session_Setup_Request::New(AnalyzerContext& context, Reader& reader)
 	{		
@@ -239,17 +242,15 @@ namespace SMBx
 		security_mode = *reader.read<uint8>();
 		capabilities = *reader.read<uint32>();
 		channel = *reader.read<uint32>();
-		buffer_offset = *reader.read<uint16>();
-		buffer_len = *reader.read<uint16>();
+		data_offset = *reader.read<uint16>();
+		data_len = *reader.read<uint16>();
 		previous_session_id = *reader.read<uint64>();
 			
-		
-		if (buffer_len > 0) 
-		{
-			reader.skip(buffer_offset - reader.current_pos + header->beginning);
-			reader.skip(buffer_len);
-		}
-
+		return SMB2_Chunked_Body::New(context, reader);	
+	}	
+	
+	void SMB2_Session_Setup_Request::Finished(AnalyzerContext& context, Reader& reader)
+	{		
 		if (smb2_session_setup_request) {	
 			val_list* vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
@@ -257,38 +258,45 @@ namespace SMBx
 			vl->append(new Val(capabilities, TYPE_COUNT));
 			vl->append(new Val(channel, TYPE_COUNT));
 			vl->append(new Val(previous_session_id, TYPE_COUNT));
-			vl->append(new Val(buffer_len, TYPE_COUNT));
+			vl->append(new Val(data_len, TYPE_COUNT));
 
 			context.QueueEvent(smb2_session_setup_request, vl);		
 		}
+	}		
 	
-		return true;
-	}	
+	void SMB2_Session_Setup_Request::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
+	{
+		reader.skip(length);
+	}
+		
 	
 	bool SMB2_Session_Setup_Response::New(AnalyzerContext& context, Reader& reader)
 	{		
 		flags = *reader.read<uint16>();
-		buffer_offset = *reader.read<uint16>();
-		buffer_len = *reader.read<uint16>();
+		data_offset = *reader.read<uint16>();
+		data_len = *reader.read<uint16>();
 		
-		if (buffer_len > 0) 
-		{
-			reader.skip(buffer_offset - reader.current_pos + header->beginning);
-			reader.skip(buffer_len);
-		}
-		
+		return SMB2_Chunked_Body::New(context, reader);	
+	}	
+	
+	void SMB2_Session_Setup_Response::Finished(AnalyzerContext& context, Reader& reader)
+	{		
 		context.state.NewSession(header->sessionId);
 
 		if (smb2_session_setup_response) {	
 			val_list* vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
-			vl->append(new Val(buffer_len, TYPE_COUNT));
+			vl->append(new Val(data_len, TYPE_COUNT));
 
 			context.QueueEvent(smb2_session_setup_response, vl);		
 		}		
+	}		
 	
-		return true;
-	}	
+	void SMB2_Session_Setup_Response::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
+	{
+		reader.skip(length);
+	}
+		
 	
 	bool SMB2_Logoff_Request::New(AnalyzerContext& context, Reader& reader)
 	{		

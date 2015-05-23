@@ -125,8 +125,12 @@ namespace SMBx
 		virtual bool New(AnalyzerContext& context, Reader& reader) override;
 	};
 	
-	class SMB2_Negotiate_Response : public SMB2_Body, public SMB2_Response
+	class SMB2_Negotiate_Response : public SMB2_Chunked_Body, public SMB2_Response
 	{
+		protected:
+		void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override final;
+		void Finished(AnalyzerContext& context, Reader& reader) override final;
+		
 		public:
 		uint16 security_mode;
 		uint16 dialect; 
@@ -134,38 +138,40 @@ namespace SMBx
 		uint32 capabilities;
 		uint64 server_time;
 		uint64 server_boot_time;
-		uint16 buffer_offset;
-		uint16 buffer_len;
 		
-		SMB2_Negotiate_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}
+		SMB2_Negotiate_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Chunked_Body(h), SMB2_Response(req) {}
 	
 		virtual bool New(AnalyzerContext& context, Reader& reader) override;
 	};	
 	
-class SMB2_Session_Setup_Request : public SMB2_Body
+class SMB2_Session_Setup_Request : public SMB2_Chunked_Body
 	{
+		protected:
+		void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override final;
+		void Finished(AnalyzerContext& context, Reader& reader) override final;
+		
 		public:
 		uint8 flags;
 		uint8 security_mode;
 		uint32 capabilities;
 		uint32 channel;
-		uint16 buffer_offset;
-		uint16 buffer_len;
 		uint64 previous_session_id;	
 
-		SMB2_Session_Setup_Request(shared_ptr<SMB2_Header> h) : SMB2_Body(h) {}
+		SMB2_Session_Setup_Request(shared_ptr<SMB2_Header> h) : SMB2_Chunked_Body(h) {}
 		
 		virtual bool New(AnalyzerContext& context, Reader& reader);		
 	};
 	
-	class SMB2_Session_Setup_Response : public SMB2_Body, public SMB2_Response
+	class SMB2_Session_Setup_Response : public SMB2_Chunked_Body, public SMB2_Response
 	{
+		protected:
+		void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override final;
+		void Finished(AnalyzerContext& context, Reader& reader) override final;
+		
 		public:
 		uint16 flags;
-		uint16 buffer_offset;
-		uint16 buffer_len;
 		
-		SMB2_Session_Setup_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Body(h), SMB2_Response(req) {}
+		SMB2_Session_Setup_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Chunked_Body(h), SMB2_Response(req) {}
 		
 		virtual bool New(AnalyzerContext& context, Reader& reader);			
 	};
@@ -375,9 +381,9 @@ class SMB2_Session_Setup_Request : public SMB2_Body
 	class SMB2_Query_Directory_Response : public SMB2_Chunked_Body, public SMB2_Response
 	{	
 		protected:
-		virtual void Finished(AnalyzerContext& context, Reader& reader) override;
-		virtual void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override;
-		virtual void ChunkFailed(AnalyzerContext& context, Reader& reader) override;
+		void Finished(AnalyzerContext& context, Reader& reader) override final;
+		void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override final;
+		void ChunkFailed(AnalyzerContext& context, Reader& reader) override final;
 	
 		public:
 		SMB2_Query_Directory_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Chunked_Body(h), SMB2_Response(req) {}		
