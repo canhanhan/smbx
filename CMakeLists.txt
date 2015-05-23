@@ -7,7 +7,7 @@ include(BroPlugin)
 include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 bro_plugin_begin(Custom SMB)
-bro_plugin_cc(src/Plugin.cc src/Buffer.cc src/State.cc src/Handler.cc src/Analyzer.cc src/SMBx.cc)
+bro_plugin_cc(src/Plugin.cc src/Buffer.cc src/State.cc src/Handler.cc src/Analyzer.cc src/Message.cc)
 #bro_plugin_bif(src/events.bif)
 bro_plugin_dist_files(README CHANGES COPYING VERSION)
 bro_plugin_end()
