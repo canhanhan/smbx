@@ -129,7 +129,8 @@ namespace SMBx
 			}
 		}
 		
-		if (reader.len - reader.current_pos < 64) {
+		// 64 bytes for header and 2 bytes for structure size
+		if (reader.len - reader.current_pos < 66) {
 			return false;
 		}
 		
