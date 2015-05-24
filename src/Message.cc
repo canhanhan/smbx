@@ -53,7 +53,7 @@ namespace SMBx
 		treeId = *reader.read<uint32>();
 		sessionId = *reader.read<uint64>();
 		reader.skip(16);
-		structure_size = *reader.read<uint16>() - 1;
+		structure_size = *reader.read<uint16>();
 		is_response = flags & 0x00000001;
 		is_async = flags & 0x00000002;
 		
