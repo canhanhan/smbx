@@ -18,7 +18,7 @@ namespace SMBx {
 		~SMB2_File();
 	};	
 	typedef map<uint32, shared_ptr<SMB2_File>> file_map;
-	typedef map<uint32, shared_ptr<string>> treeconnection_map;
+	typedef map<uint32, string> treeconnection_map;
 	
 	class SMB2_Session
 	{			
@@ -45,7 +45,7 @@ namespace SMBx {
 		void CloseTreeConnection(uint64 session_id, uint32 tree_id);
 		void CloseSession(uint64 id);
 		shared_ptr<SMB2_Session> GetSession(uint64 session_id);
-		shared_ptr<string> GetTreeConnection(uint64 session_id, uint32 tree_id);
+		string GetTreeConnection(uint64 session_id, uint32 tree_id);
 		shared_ptr<SMB2_File> GetFile(uint64 session_id, uint32 tree_id, uint64 file_id);	
 		
 		void PushMessage(uint64 message_id, shared_ptr<SMB2_Body> message);
