@@ -19,16 +19,18 @@ namespace SMBx
 		file_mgr->EndOfFile(file_id);
 	};	
 	
-	shared_ptr<SMB2_Session> State::GetSession(uint64 session_id) const
+	shared_ptr<SMB2_Session> State::GetSession(uint64 session_id)
 	{
 		auto it = sessions.find(session_id);
-		if (it == sessions.end())
-			return nullptr;	
+		if (it == sessions.end()) {
+			NewSession(session_id);
+			return GetSession(session_id);	
+		}
 		
 		return it->second;
 	}
 	
-	shared_ptr<SMB2_TreeConnection> State::GetTreeConnection(uint64 session_id, uint32 tree_id) const
+	shared_ptr<string> State::GetTreeConnection(uint64 session_id, uint32 tree_id)
 	{
 		auto session = GetSession(session_id);
 		if (session == nullptr)
@@ -41,14 +43,14 @@ namespace SMBx
 		return it->second;
 	}
 	
-	shared_ptr<SMB2_File> State::GetFile(uint64 session_id, uint32 tree_id, uint64 file_id) const
+	shared_ptr<SMB2_File> State::GetFile(uint64 session_id, uint32 tree_id, uint64 file_id)
 	{
-		auto tree = GetTreeConnection(session_id, tree_id);
-		if (tree == nullptr)
+		auto session = GetSession(session_id);
+		if (session == nullptr)
 			return nullptr;
 		
-		auto it = tree->files.find(file_id);
-		if (it == tree->files.end())
+		auto it = session->files.find(file_id);
+		if (it == session->files.end())
 			return nullptr;	
 						
 		return it->second;
@@ -67,29 +69,31 @@ namespace SMBx
 		if (session == nullptr)
 			return;
 			
-		session->tree_connections[tree_id] = make_shared<SMB2_TreeConnection>(tree_id, name);
+		session->tree_connections[tree_id] = make_shared<string>(name);
 		
 		DEBUG_MSG("New tree: sid: %lu, tid: %u, name: %s\n", session_id, tree_id, name.c_str());
 	}	
 	
 	void State::NewFile(uint64 session_id, uint32 tree_id, uint64 file_id, string name)
 	{
-		auto tree = GetTreeConnection(session_id, tree_id);
-		if (tree == nullptr)
+		auto session = GetSession(session_id);
+		if (session == nullptr)
 			return;
 				
-		tree->files[file_id] = make_shared<SMB2_File>(file_id, tree->name, name);
+		auto tree = GetTreeConnection(session_id, tree_id);		
+		auto tree_name = tree == nullptr ? string("\\\\<unknown>") : *tree;
+		session->files[file_id] = make_shared<SMB2_File>(file_id, tree_name, name);
 		
-		DEBUG_MSG("New file: sid: %lu, tid: %u, fid: %lu, tree: %s, name: %s\n", session_id, tree_id, file_id, tree->name.c_str(), name.c_str());
+		DEBUG_MSG("New file: sid: %lu, tid: %u, fid: %lu, tree: %s, name: %s\n", session_id, tree_id, file_id, tree_name.c_str(), name.c_str());
 	}	
 	
 	void State::CloseFile(uint64 session_id, uint32 tree_id, uint64 file_id)
 	{
-		auto tree = GetTreeConnection(session_id, tree_id);
-		if (tree == nullptr)
+		auto session = GetSession(session_id);
+		if (session == nullptr)
 			return;
 				
-		tree->files.erase(file_id);	
+		session->files.erase(file_id);	
 		
 		DEBUG_MSG("Close file: sid: %lu, tid: %u, fid: %lu\n", session_id, tree_id, file_id);
 	}		

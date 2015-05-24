@@ -18,17 +18,7 @@ namespace SMBx {
 		~SMB2_File();
 	};	
 	typedef map<uint32, shared_ptr<SMB2_File>> file_map;
-	
-	class SMB2_TreeConnection
-	{	
-		public:
-		uint32 id;
-		string name;
-	
-		SMB2_TreeConnection(uint32 id, string name) : id(id), name(name) {};		
-		file_map files;
-	};
-	typedef map<uint32, shared_ptr<SMB2_TreeConnection>> treeconnection_map;
+	typedef map<uint32, shared_ptr<string>> treeconnection_map;
 	
 	class SMB2_Session
 	{			
@@ -36,6 +26,7 @@ namespace SMBx {
 		uint64 id;
 		
 		SMB2_Session(uint64 id) : id(id) {};		
+		file_map files;
 		treeconnection_map tree_connections;
 	};
 	typedef map<uint64, shared_ptr<SMB2_Session>> session_map;
@@ -53,9 +44,9 @@ namespace SMBx {
 		void CloseFile(uint64 session_id, uint32 tree_id, uint64 file_id);
 		void CloseTreeConnection(uint64 session_id, uint32 tree_id);
 		void CloseSession(uint64 id);
-		shared_ptr<SMB2_Session> GetSession(uint64 session_id) const;
-		shared_ptr<SMB2_TreeConnection> GetTreeConnection(uint64 session_id, uint32 tree_id) const;
-		shared_ptr<SMB2_File> GetFile(uint64 session_id, uint32 tree_id, uint64 file_id) const;	
+		shared_ptr<SMB2_Session> GetSession(uint64 session_id);
+		shared_ptr<string> GetTreeConnection(uint64 session_id, uint32 tree_id);
+		shared_ptr<SMB2_File> GetFile(uint64 session_id, uint32 tree_id, uint64 file_id);	
 		
 		void PushMessage(uint64 message_id, shared_ptr<SMB2_Body> message);
 		shared_ptr<SMB2_Body> PopMessage(uint64 message_id);		
