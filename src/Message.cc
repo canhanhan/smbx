@@ -65,7 +65,7 @@ namespace SMBx
 		if (smb2_header == NULL)
 			 smb2_header = internal_type("smb2_header")->AsRecordType();
 
-		RecordVal* rv = new RecordVal(smb2_header);
+		auto rv = new RecordVal(smb2_header);
 		rv->Assign(0, new Val(header->header_size, TYPE_COUNT));
 		rv->Assign(1, new Val(header->status, TYPE_COUNT));
 		rv->Assign(2, new Val(header->command, TYPE_COUNT));
@@ -75,7 +75,7 @@ namespace SMBx
 		rv->Assign(6, new Val(header->sessionId, TYPE_COUNT));
 		rv->Assign(7, new Val(header->structure_size, TYPE_COUNT));
 
-		val_list* vl = new val_list;
+		auto vl = new val_list;
 		vl->append(context.conn->BuildConnVal());
 		vl->append(rv);
 
@@ -87,7 +87,8 @@ namespace SMBx
 		if (data_len > 0)
 		{
 			reader.skip(data_offset - reader.current_pos + header->beginning);
-			auto remaining = reader.len - reader.current_pos;
+			ASSERT(reader.len >= reader.current_pos);
+			uint16 remaining = reader.len - reader.current_pos;
 			data_received = remaining;
 
 			if (data_len > remaining)
@@ -133,13 +134,13 @@ namespace SMBx
 			file_ = context.state.GetFile(header->sessionId, header->treeId, volatile_file_id);
 
 		if (file_ != nullptr && smb2_pre_file_transfer) {
-			RecordVal* rv = new RecordVal(smb2_fileinfo);
+			auto rv = new RecordVal(smb2_fileinfo);
 			rv->Assign(0, new StringVal(new BroString(file_->file_id)));
 			rv->Assign(1, new StringVal(new BroString(file_->name)));
 			rv->Assign(2, new StringVal(new BroString(file_->tree_name)));
 			rv->Assign(3, new StringVal(new BroString(file_->path)));
 
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(rv);
 
 			context.QueueEvent(smb2_pre_file_transfer, vl);
@@ -170,7 +171,7 @@ namespace SMBx
 		reader.skip(byte_count || 1);
 
 		if (smb2_error) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_error, vl);
 		}
 
@@ -198,7 +199,7 @@ namespace SMBx
 			dialectsVal->Assign(i, new Val(dialects[i], TYPE_COUNT));
 
 		if (smb2_negotiate_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(security_mode, TYPE_COUNT));
 			vl->append(new Val(capabilities, TYPE_COUNT));
 			vl->append(new StringVal(client_guid));
@@ -230,7 +231,7 @@ namespace SMBx
 	void SMB2_Negotiate_Response::Finished(AnalyzerContext& context, Reader& reader)
 	{
 		if (smb2_negotiate_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(security_mode, TYPE_COUNT));
 			vl->append(new Val(dialect, TYPE_COUNT));
 			vl->append(new StringVal(server_guid));
@@ -246,7 +247,6 @@ namespace SMBx
 	{
 		reader.skip(length);
 	}
-
 
 	bool SMB2_Session_Setup_Request::New(AnalyzerContext& context, Reader& reader)
 	{
@@ -264,7 +264,7 @@ namespace SMBx
 	void SMB2_Session_Setup_Request::Finished(AnalyzerContext& context, Reader& reader)
 	{
 		if (smb2_session_setup_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
 			vl->append(new Val(security_mode, TYPE_COUNT));
 			vl->append(new Val(capabilities, TYPE_COUNT));
@@ -281,7 +281,6 @@ namespace SMBx
 		reader.skip(length);
 	}
 
-
 	bool SMB2_Session_Setup_Response::New(AnalyzerContext& context, Reader& reader)
 	{
 		flags = *reader.read<uint16>();
@@ -296,7 +295,7 @@ namespace SMBx
 		context.state.NewSession(header->sessionId);
 
 		if (smb2_session_setup_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
 			vl->append(new Val(data_len, TYPE_COUNT));
 
@@ -309,7 +308,6 @@ namespace SMBx
 		reader.skip(length);
 	}
 
-
 	bool SMB2_Logoff_Request::New(AnalyzerContext& context, Reader& reader)
 	{
 		reader.skip(2);
@@ -317,8 +315,7 @@ namespace SMBx
 		context.state.CloseSession(header->sessionId);
 
 		if (smb2_logoff_request) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_logoff_request, vl);
 		}
 
@@ -330,8 +327,7 @@ namespace SMBx
 		reader.skip(2);
 
 		if (smb2_logoff_response) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_logoff_response, vl);
 		}
 
@@ -358,9 +354,8 @@ namespace SMBx
 		name = *reader.read_string(path_length);
 
 		if (smb2_treeconnect_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new StringVal(name));
-
 			context.QueueEvent(smb2_treeconnect_request, vl);
 		}
 
@@ -380,7 +375,7 @@ namespace SMBx
 			context.state.NewTreeConnection(header->sessionId, header->treeId, req->name);
 
 		if (smb2_treeconnect_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(share_flags, TYPE_COUNT));
 			vl->append(new Val(capabilities, TYPE_COUNT));
 			vl->append(new Val(maximal_access, TYPE_COUNT));
@@ -397,8 +392,7 @@ namespace SMBx
 		context.state.CloseTreeConnection(header->sessionId, header->treeId);
 
 		if (smb2_tree_disconnect_request) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_tree_disconnect_request, vl);
 		}
 
@@ -410,8 +404,7 @@ namespace SMBx
 		reader.skip(2);
 
 		if (smb2_tree_disconnect_response) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_tree_disconnect_response, vl);
 		}
 
@@ -460,7 +453,7 @@ namespace SMBx
 		}
 
 		if (smb2_create_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(access_mask, TYPE_COUNT));
 			vl->append(new Val(file_attrs, TYPE_COUNT));
 			vl->append(new Val(share_access, TYPE_COUNT));
@@ -509,7 +502,7 @@ namespace SMBx
 			context.state.NewFile(header->sessionId, request()->header->treeId, volatile_file_id, req->filename);
 
 		if (smb2_create_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(create_action, TYPE_COUNT));
 			vl->append(new Val(TIMESTAMP(creation_time), TYPE_TIME));
 			vl->append(new Val(TIMESTAMP(last_access_time), TYPE_TIME));
@@ -535,7 +528,7 @@ namespace SMBx
 		context.state.CloseFile(header->sessionId, header->treeId, volatile_file_id);
 
 		if (smb2_close_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
 
 			context.QueueEvent(smb2_close_request, vl);
@@ -557,7 +550,7 @@ namespace SMBx
 		file_attrs = *reader.read<uint32>();
 
 		if (smb2_close_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
 			vl->append(new Val(TIMESTAMP(creation_time), TYPE_TIME));
 			vl->append(new Val(TIMESTAMP(last_access_time), TYPE_TIME));
@@ -603,7 +596,7 @@ namespace SMBx
 		}
 
 		if (smb2_read_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(flags, TYPE_COUNT));
 			vl->append(new Val(length, TYPE_COUNT));
 			vl->append(new Val(offset, TYPE_COUNT));
@@ -633,7 +626,7 @@ namespace SMBx
 		}
 
 		if (smb2_read_response) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			vl->append(new Val(data_len, TYPE_COUNT));
 			vl->append(new Val(data_remaining, TYPE_COUNT));
 
@@ -669,7 +662,7 @@ namespace SMBx
 		}
 
 		if (smb2_write_request) {
-			val_list* vl = create_value_list(context);
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_write_request, vl);
 		}
 
@@ -698,8 +691,7 @@ namespace SMBx
 		}
 
 		if (smb2_write_response) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_write_response, vl);
 		}
 
@@ -711,8 +703,7 @@ namespace SMBx
 		reader.move_end();
 
 		if (smb2_cancel_request) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_cancel_request, vl);
 		}
 
@@ -724,8 +715,7 @@ namespace SMBx
 		reader.move_end();
 
 		if (smb2_cancel_response) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_cancel_response, vl);
 		}
 
@@ -743,7 +733,6 @@ namespace SMBx
 		filename_len = *reader.read<uint16>();
 		output_buffer_len = *reader.read<uint32>();
 
-		string* filename = NULL;
 		if (filename_len > 0) {
 			auto filename_buffer_offset = filename_offset - reader.current_pos + header->beginning;
 			if (!reader.available(filename_buffer_offset + filename_len))
@@ -753,12 +742,11 @@ namespace SMBx
 			}
 
 			reader.skip(filename_buffer_offset);
-			filename = reader.read_string(filename_len);
+			reader.skip(filename_len);
 		}
 
 		if (smb2_query_directory_request) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_query_directory_request, vl);
 		}
 
@@ -776,8 +764,7 @@ namespace SMBx
 	void SMB2_Query_Directory_Response::Finished(AnalyzerContext& context, Reader& reader)
 	{
 		if (smb2_query_directory_response) {
-			val_list* vl = create_value_list(context);
-
+			auto vl = create_value_list(context);
 			context.QueueEvent(smb2_query_directory_response, vl);
 		}
 	}
@@ -785,9 +772,5 @@ namespace SMBx
 	void SMB2_Query_Directory_Response::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
 	{
 		reader.skip(length);
-	}
-
-	void SMB2_Query_Directory_Response::ChunkFailed(AnalyzerContext& context, Reader& reader)
-	{
 	}
 }
