@@ -20,8 +20,8 @@ namespace SMBx
 		analyzer::tcp::TCP_ApplicationAnalyzer::DeliverStream(len, data, orig);
 
 		assert(TCP());
-		if ( TCP()->IsPartial() )
-			return;
+		//if ( TCP()->IsPartial() )
+		//	return;
 
 		handler_[orig].handle(len, data);
 	}
