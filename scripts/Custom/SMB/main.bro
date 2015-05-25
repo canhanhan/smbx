@@ -1,4 +1,5 @@
 @load base/frameworks/files
+@load-sigs ./dpd
 
 module SMBx;
 
