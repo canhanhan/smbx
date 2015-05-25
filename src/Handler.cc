@@ -114,7 +114,7 @@ namespace SMBx
 				current_message = nullptr;
 			}
 
-		} while (reader.current_pos < reader.len);
+		} while (reader.available(1));
 
 		if (is_last_parsed)
 			buffer.reset();
@@ -123,10 +123,10 @@ namespace SMBx
 	bool Handler::handle_new()
 	{
 		// Find SMB2 magic
-		while (reader.current_pos + 4 < reader.len && *((uint32*)(reader.data + reader.current_pos)) != 0x424D53FE)
+		while (reader.available(4) && *((uint32*)(reader.data + reader.current_pos)) != 0x424D53FE)
 		{
 			reader.skip(1);
-			if (reader.current_pos + 4 >= reader.len) {
+			if (!reader.available(4)) {
 				DEBUG_MSG("Not SMB2 package.\n");
 				reader.move_end();
 				return true;
@@ -134,7 +134,7 @@ namespace SMBx
 		}
 
 		// 64 bytes for header and 2 bytes for structure size
-		if (reader.len - reader.current_pos < 66) {
+		if (!reader.available(66)) {
 			DEBUG_MSG("Buffer is too small for header\n");
 			return false;
 		}
@@ -150,8 +150,7 @@ namespace SMBx
 			return true;
 		}
 
-		auto avail = reader.len - reader.current_pos;
-		if (header->structure_size - 2 > avail) // Structure is not part of header - hence the - 2
+		if (reader.available(header->structure_size - 2)) // Structure is not part of header - hence the - 2
 		{
 			DEBUG_MSG("Buffer is too small for packet structure\n");
 			return false;

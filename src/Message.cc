@@ -506,7 +506,7 @@ namespace SMBx
 
 		auto req = request<SMB2_Create_Request>();
 		if (req != nullptr)
-			context.state.NewFile(header->sessionId, request()->header->treeId, volatile_file_id, req->filename);		
+			context.state.NewFile(header->sessionId, request()->header->treeId, volatile_file_id, req->filename);
 
 		if (smb2_create_response) {
 			val_list* vl = create_value_list(context);
