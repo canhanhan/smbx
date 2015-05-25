@@ -60,9 +60,14 @@ namespace SMBx {
 			return buf;
 		}
 		
+		inline bool available(uint length) 
+		{
+			return current_pos + length <= len;
+		}
+
 		void check_boundry(uint length)  
 		{
-			if (current_pos + length > len) {
+			if (!available(length)) {
 				DEBUG_MSG("Requested: %u, Available: %d, Position: %d\n", length, len-current_pos, current_pos);
 				throw std::runtime_error("Buffer is not enough to read the datagram.");
 			}		

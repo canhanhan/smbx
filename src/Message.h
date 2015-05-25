@@ -6,8 +6,8 @@
 #include "Reader.h"
 #include "AnalyzerContext.h"
 
-namespace SMBx 
-{	
+namespace SMBx
+{
 	class Analyzer;
 
 	class not_implemented_exception: public std::runtime_error
@@ -15,7 +15,7 @@ namespace SMBx
 		public:
 		not_implemented_exception(const string& what_arg) : std::runtime_error(what_arg) {};
 	};
-		
+
 	class SMB2_Header
 	{
 		public:
@@ -29,29 +29,30 @@ namespace SMBx
 		uint64 messageId;
 		int32 treeId;
 		uint64 sessionId;
-		uint16 structure_size;	
+		uint16 structure_size;
 		bool is_response;
 		bool is_async;
-				
+
 		virtual bool New(Reader& reader);
 	};
-	
+
 	class SMB2_Body
 	{
-		protected:		
-		val_list* create_value_list(AnalyzerContext& context);		
-	
+		protected:
+		val_list* create_value_list(AnalyzerContext& context);
+
 		public:
+		bool is_parsed { true };
 		shared_ptr<SMB2_Header> header;
-		
+
 		SMB2_Body(shared_ptr<SMB2_Header> h) : header(h) { }
 		virtual ~SMB2_Body() {};
-		
+
 		virtual bool New(AnalyzerContext& context, Reader& reader) { throw not_implemented_exception("SMB2_Body::New"); }
 		virtual bool Continue(AnalyzerContext& context, Reader& reader) { throw not_implemented_exception("SMB2_Body::Continue"); }
-		
+
 	};
-	
+
 	class SMB2_Response
 	{
 		public:
