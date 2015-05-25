@@ -112,8 +112,11 @@ namespace SMBx
 	{
 		auto it = states.find(message_id);
 		if (it == states.end())
-			return nullptr;			
-		
-		return it->second;
+			return nullptr;
+
+		auto temp = it->second;
+		states.erase(message_id);
+
+		return temp;
 	}
 }
