@@ -150,7 +150,7 @@ namespace SMBx
 			return true;
 		}
 
-		if (reader.available(header->structure_size - 2)) // Structure is not part of header - hence the - 2
+		if (!reader.available(header->structure_size - 2)) // Structure is not part of header - hence the - 2
 		{
 			DEBUG_MSG("Buffer is too small for packet structure\n");
 			return false;

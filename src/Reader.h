@@ -65,7 +65,7 @@ namespace SMBx {
 			return current_pos + length <= len;
 		}
 
-		void check_boundry(uint length)
+		inline void check_boundry(uint length)
 		{
 			if (!available(length)) {
 				DEBUG_MSG("Requested: %u, Available: %d, Position: %d\n", length, len-current_pos, current_pos);
@@ -73,18 +73,18 @@ namespace SMBx {
 			}
 		}
 
-		void move_end()
+		inline void move_end()
 		{
 			current_pos = len;
 		}
 
-		void skip(int bytes)
+		inline void skip(int bytes)
 		{
 			check_boundry(bytes);
 			current_pos += bytes;
 		}
 
-		void reset(int new_len, const u_char* new_data)
+		inline void reset(int new_len, const u_char* new_data)
 		{
 			data = new_data;
 			len = new_len;

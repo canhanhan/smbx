@@ -377,7 +377,6 @@ namespace SMBx
 		protected:
 		void Finished(AnalyzerContext& context, Reader& reader) override final;
 		void ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length) override final;
-		void ChunkFailed(AnalyzerContext& context, Reader& reader) override final;
 
 		public:
 		SMB2_Query_Directory_Response(shared_ptr<SMB2_Header> h, shared_ptr<SMB2_Body> req) : SMB2_Chunked_Body(h), SMB2_Response(req) {}
