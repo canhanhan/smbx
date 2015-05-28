@@ -351,7 +351,7 @@ namespace SMBx
 			reader.skip(path_buffer_offset);
 		}
 
-		name = *reader.read_string(path_length);
+		name = reader.read_string(path_length);
 
 		if (smb2_treeconnect_request) {
 			auto vl = create_value_list(context);
@@ -437,7 +437,7 @@ namespace SMBx
 			}
 
 			reader.skip(filename_buffer_offset);
-			filename = *reader.read_string(filename_len);
+			filename = reader.read_string(filename_len);
 		}
 
 		if (context_len > 0) {
