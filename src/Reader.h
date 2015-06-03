@@ -53,7 +53,7 @@ namespace SMBx {
 			uint16 string_size = length / 2;
 
 			auto buffer = read<char16_t>(string_size);
-			return UTF16to8(buffer);
+			return UTF16to8(buffer, buffer + string_size);
 		}
 
 		inline bool available(uint length)
@@ -88,11 +88,11 @@ namespace SMBx {
 		}
 
 		private:
-		string UTF16to8(const char16_t * in)
+		string UTF16to8(const char16_t * in, const char16_t * end)
 		{
 			string out;
 			unsigned int codepoint = 0;
-			for (in;  *in != 0;  ++in)
+			for (in;  in < end; ++in)
 			{
 				if (*in >= 0xd800 && *in <= 0xdbff)
 					codepoint = ((*in - 0xd800) << 10) + 0x10000;

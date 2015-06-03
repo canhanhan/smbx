@@ -62,18 +62,18 @@ namespace SMBx
 		commands[SMB2_TREE_DISCONNECT] = SMBX_COMMAND(SMB2_Tree_Disconnect);
 		commands[SMB2_CREATE] = SMBX_COMMAND(SMB2_Create);
 		commands[SMB2_CLOSE] = SMBX_COMMAND(SMB2_Close);
-		// commands[SMB2_FLUSH] = SMBX_COMMAND(SMB2_Flush);
+		commands[SMB2_FLUSH] = SMBX_COMMAND(SMB2_Flush);
 		commands[SMB2_READ] = SMBX_COMMAND(SMB2_Read);
 		commands[SMB2_WRITE] = SMBX_COMMAND(SMB2_Write);
-		// commands[SMB2_LOCK] = SMBX_COMMAND(SMB2_Lock);
-		// commands[SMB2_IOCTL] = SMBX_COMMAND(SMB2_Ioctl);
+		commands[SMB2_LOCK] = SMBX_COMMAND(SMB2_Lock);
+		commands[SMB2_IOCTL] = SMBX_COMMAND(SMB2_Ioctl);
 		commands[SMB2_CANCEL] = SMBX_COMMAND(SMB2_Cancel);
-		// commands[SMB2_ECHO] = SMBX_COMMAND(SMB2_Echo);
+		commands[SMB2_ECHO] = SMBX_COMMAND(SMB2_Echo);
 		commands[SMB2_QUERY_DIRECTORY] = SMBX_COMMAND(SMB2_Query_Directory);
-		// commands[SMB2_CHANGE_NOTIFY] = SMBX_COMMAND(SMB2_Change_Notify);
-		// commands[SMB2_QUERY_INFO] = SMBX_COMMAND(SMB2_Query_Info);
-		// commands[SMB2_SET_INFO] = SMBX_COMMAND(SMB2_Set_Info);
-		// commands[SMB2_OPLOCK_BREAK] = SMBX_COMMAND(SMB2_Oplock_Break)
+		commands[SMB2_CHANGE_NOTIFY] = SMBX_COMMAND(SMB2_Change_Notify);
+		commands[SMB2_QUERY_INFO] = SMBX_COMMAND(SMB2_Query_Info);
+		commands[SMB2_SET_INFO] = SMBX_COMMAND(SMB2_Set_Info);
+		commands[SMB2_OPLOCK_BREAK] = SMBX_COMMAND(SMB2_Oplock_Break);
 	}
 
 	const CommandPair Commands::get(uint16 command, bool is_response) const
@@ -120,18 +120,16 @@ namespace SMBx
 			buffer.reset();
 	}
 
+	bool first_message = true;
 	bool Handler::handle_new()
 	{
 		// Find SMB2 magic
-		while (reader.available(4) && *((uint32*)(reader.data + reader.current_pos)) != 0x424D53FE)
-		{
-			reader.skip(1);
-			if (!reader.available(4)) {
-				DEBUG_MSG("Not SMB2 package.\n");
-				reader.move_end();
-				return true;
-			}
-		}
+		do {
+			if (!reader.available(4))
+				return false;
+
+			reader.skip(1);			
+		} while (*((uint32*)(reader.data + reader.current_pos)) != 0x424D53FE);
 
 		// 64 bytes for header and 2 bytes for structure size
 		if (!reader.available(66)) {

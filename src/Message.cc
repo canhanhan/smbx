@@ -31,6 +31,22 @@ namespace SMBx
 	const static EventHandlerPtr smb2_cancel_response = internal_handler("smb2_cancel_response");
 	const static EventHandlerPtr smb2_query_directory_request = internal_handler("smb2_query_directory_request");
 	const static EventHandlerPtr smb2_query_directory_response = internal_handler("smb2_query_directory_response");
+	const static EventHandlerPtr smb2_flush_request = internal_handler("smb2_flush_request");
+	const static EventHandlerPtr smb2_flush_response = internal_handler("smb2_flush_response");
+	const static EventHandlerPtr smb2_lock_request = internal_handler("smb2_lock_request");
+	const static EventHandlerPtr smb2_lock_response = internal_handler("smb2_lock_response");
+	const static EventHandlerPtr smb2_echo_request = internal_handler("smb2_echo_request");
+	const static EventHandlerPtr smb2_echo_response = internal_handler("smb2_echo_response");
+	const static EventHandlerPtr smb2_change_notify_request = internal_handler("smb2_change_notify_request");
+	const static EventHandlerPtr smb2_change_notify_response = internal_handler("smb2_change_notify_response");
+	const static EventHandlerPtr smb2_query_info_request = internal_handler("smb2_query_info_request");
+	const static EventHandlerPtr smb2_query_info_response = internal_handler("smb2_query_info_response");
+	const static EventHandlerPtr smb2_set_info_request = internal_handler("smb2_set_info_request");
+	const static EventHandlerPtr smb2_set_info_response = internal_handler("smb2_set_info_response");
+	const static EventHandlerPtr smb2_ioctl_request = internal_handler("smb2_ioctl_request");
+	const static EventHandlerPtr smb2_ioctl_response = internal_handler("smb2_ioctl_response");
+	const static EventHandlerPtr smb2_oplock_break_request = internal_handler("smb2_oplock_break_request");
+	const static EventHandlerPtr smb2_oplock_break_response = internal_handler("smb2_oplock_break_response");
 	const static EventHandlerPtr smb2_error = internal_handler("smb2_error");
 	const static EventHandlerPtr smb2_pre_file_transfer = internal_handler("smb2_pre_file_transfer");
 
@@ -90,6 +106,9 @@ namespace SMBx
 			ASSERT(reader.len >= reader.current_pos);
 			uint16 remaining = reader.len - reader.current_pos;
 			data_received = remaining;
+
+			printf("Data len: %u, off: %hu, pos: %hu, beg: %hu\n", data_len, data_offset, reader.current_pos, header->beginning);
+			printf("Data rem %hu\n", remaining);
 
 			if (data_len > remaining)
   			{
@@ -153,6 +172,8 @@ namespace SMBx
 	{
 		if (file_ != nullptr)
 			file_->file_id = file_mgr->DataIn(reader.read<uint8>(length), length, offset + data_received - length, context.tag, context.conn, !header->is_response, file_->file_id);
+		else
+			reader.skip(length);
 	}
 
 	void SMB2_FileMessage::ChunkFailed(AnalyzerContext& context, Reader& reader)
@@ -168,6 +189,7 @@ namespace SMBx
 	{
 		reader.skip(2);
 		byte_count = *reader.read<uint32>();
+
 		reader.skip(byte_count || 1);
 
 		if (smb2_error) {
@@ -352,7 +374,6 @@ namespace SMBx
 		}
 
 		name = reader.read_string(path_length);
-
 		if (smb2_treeconnect_request) {
 			auto vl = create_value_list(context);
 			vl->append(new StringVal(name));
@@ -772,5 +793,349 @@ namespace SMBx
 	void SMB2_Query_Directory_Response::ChunkReceived(AnalyzerContext& context, Reader& reader, uint32 length)
 	{
 		reader.skip(length);
+	}
+
+	bool SMB2_Flush_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(6);
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+
+		if (smb2_flush_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_flush_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Flush_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+
+		if (smb2_flush_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_flush_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Lock_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		lock_count = *reader.read<uint16>();
+		lock_sequence = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+
+		auto lock_size = lock_count * (8 + 8 + 4 + 4);
+		if (!reader.available(lock_size))
+		{
+			is_parsed = false;
+			return false;
+		}
+
+		reader.skip(lock_size);
+
+		if (smb2_lock_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_lock_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Lock_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+
+		if (smb2_lock_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_lock_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Echo_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+
+		if (smb2_echo_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_echo_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Echo_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+
+		if (smb2_echo_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_echo_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Change_Notify_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		flags = *reader.read<uint16>();
+		output_buffer_length = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+		completion_filter = *reader.read<uint32>();
+		reader.skip(4);
+
+		if (smb2_change_notify_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_change_notify_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Change_Notify_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		output_buffer_offset = *reader.read<uint16>();
+		output_buffer_length = *reader.read<uint32>();
+
+		if (output_buffer_length > 0) {
+			auto buffer_offset = output_buffer_offset - reader.current_pos + header->beginning;
+			if (!reader.available(buffer_offset + output_buffer_length))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(buffer_offset);
+			reader.skip(output_buffer_length);
+		}
+
+		if (smb2_change_notify_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_change_notify_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Query_Info_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		info_type = *reader.read<u_char>();
+		file_info_class = *reader.read<u_char>();
+		output_buffer_length = *reader.read<uint32>();
+		input_buffer_offset = *reader.read<uint16>();
+		reader.skip(2);
+		input_buffer_length = *reader.read<uint32>();
+		additional_information = *reader.read<uint32>();
+		flags = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+
+		if (input_buffer_length > 0) {
+			auto buffer_offset = input_buffer_offset - reader.current_pos + header->beginning;
+			if (!reader.available(buffer_offset + input_buffer_length))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(buffer_offset);
+			reader.skip(input_buffer_length);
+		}
+
+		if (smb2_query_info_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_query_info_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Query_Info_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		output_buffer_offset = *reader.read<uint16>();
+		output_buffer_length = *reader.read<uint32>();
+
+		if (output_buffer_length > 0) {
+			auto buffer_offset = output_buffer_offset - reader.current_pos + header->beginning;
+			printf("size %u, %hu, %d\n", output_buffer_length, output_buffer_offset, buffer_offset);
+			if (!reader.available(buffer_offset + output_buffer_length))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(buffer_offset);
+			reader.skip(output_buffer_length);
+		}
+
+		if (smb2_query_info_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_query_info_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Set_Info_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		info_type = *reader.read<u_char>();
+		file_info_class = *reader.read<u_char>();
+		buffer_length = *reader.read<uint32>();
+		buffer_offset = *reader.read<uint16>();
+		reader.skip(2);
+		additional_information = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+
+		if (buffer_length > 0) {
+			auto offset = buffer_offset - reader.current_pos + header->beginning;
+			if (!reader.available(offset + buffer_length))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(offset);
+			reader.skip(buffer_length);
+		}
+
+		if (smb2_set_info_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_set_info_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Set_Info_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		if (smb2_set_info_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_set_info_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Ioctl_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+		ctl_code = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+		input_offset = *reader.read<uint32>();
+		input_count = *reader.read<uint32>();
+		max_input_response = *reader.read<uint32>();
+		output_offset = *reader.read<uint32>();
+		output_count = *reader.read<uint32>();
+		max_output_response = *reader.read<uint32>();
+		flags = *reader.read<uint32>();
+		reader.skip(4);
+
+		if (input_count > 0) {
+			auto input_buffer_offset = input_offset - reader.current_pos + header->beginning;
+			if (!reader.available(input_buffer_offset + input_count))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(input_buffer_offset);
+			reader.skip(input_count);
+		}
+
+		if (output_count > 0) {
+			auto output_buffer_offset = output_offset - reader.current_pos + header->beginning;
+			if (!reader.available(output_buffer_offset + output_count))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(output_buffer_offset);
+			reader.skip(output_count);
+		}
+
+		if (smb2_ioctl_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_ioctl_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Ioctl_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(2);
+		ctl_code = *reader.read<uint32>();
+		persistent_file_id = *reader.read<uint64>();
+		volatile_file_id = *reader.read<uint64>();
+		input_offset = *reader.read<uint32>();
+		input_count = *reader.read<uint32>();
+		output_offset = *reader.read<uint32>();
+		output_count = *reader.read<uint32>();
+		flags = *reader.read<uint32>();
+		reader.skip(4);
+
+		if (input_count > 0) {
+			auto input_buffer_offset = input_offset - reader.current_pos + header->beginning;
+			if (!reader.available(input_buffer_offset + input_count))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(input_buffer_offset);
+			reader.skip(input_count);
+		}
+
+		if (output_count > 0) {
+			auto output_buffer_offset = output_offset - reader.current_pos + header->beginning;
+			if (!reader.available(output_buffer_offset + output_count))
+			{
+				is_parsed = false;
+				return false;
+			}
+
+			reader.skip(output_buffer_offset);
+			reader.skip(output_count);
+		}
+
+		if (smb2_ioctl_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_ioctl_response, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Oplock_Break_Request::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(header->structure_size-2);
+
+		if (smb2_oplock_break_request) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_oplock_break_request, vl);
+		}
+
+		return true;
+	}
+
+	bool SMB2_Oplock_Break_Response::New(AnalyzerContext& context, Reader& reader)
+	{
+		reader.skip(header->structure_size-2);
+
+		if (smb2_oplock_break_response) {
+			auto vl = create_value_list(context);
+			context.QueueEvent(smb2_oplock_break_response, vl);
+		}
+
+		return true;
 	}
 }
